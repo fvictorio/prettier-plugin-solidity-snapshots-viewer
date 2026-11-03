@@ -1,0 +1,1069 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snapshot Diff · prettier-plugin-solidity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: fixed command bar on top, file rail on the left, entries stacked on the right; collapses to one column on phones. */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --fg: #1d2230;
+  --muted: #646b80;
+  --line: #dfe2ea;
+  --accent: #4553b8;
+  --accent-soft: #e7e9f8;
+  --add-bg: #e3f6e8;
+  --add-mark: #a6e3b5;
+  --add-fg: #1a6b34;
+  --del-bg: #fbe6e6;
+  --del-mark: #f2b0b0;
+  --del-fg: #a12a2a;
+  --mod-fg: #8a5a00;
+  --fold-bg: #eef0f6;
+  --ruler: #c7cbe6;
+  --gutter-fg: #9aa0b3;
+  --font-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --lh: 20px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12141b; --panel: #1a1d26; --fg: #e3e6ee; --muted: #8e95aa; --line: #2c303d;
+    --accent: #8b97f0; --accent-soft: #262a45;
+    --add-bg: #15301f; --add-mark: #23603a; --add-fg: #7fd99a;
+    --del-bg: #3a1a1d; --del-mark: #74303a; --del-fg: #f19a9a;
+    --mod-fg: #e0b45a; --fold-bg: #20232e; --ruler: #3a3f63; --gutter-fg: #5b6175;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12141b; --panel: #1a1d26; --fg: #e3e6ee; --muted: #8e95aa; --line: #2c303d;
+  --accent: #8b97f0; --accent-soft: #262a45;
+  --add-bg: #15301f; --add-mark: #23603a; --add-fg: #7fd99a;
+  --del-bg: #3a1a1d; --del-mark: #74303a; --del-fg: #f19a9a;
+  --mod-fg: #e0b45a; --fold-bg: #20232e; --ruler: #3a3f63; --gutter-fg: #5b6175;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font-ui); }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+
+/* Command bar */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 600; letter-spacing: .01em; white-space: nowrap; }
+.brand small { font-weight: 400; color: var(--muted); margin-left: 6px; font-family: var(--font-code); font-size: 12px; }
+.query { flex: 1 1 380px; display: flex; gap: 6px; min-width: 0; }
+.query input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-family: var(--font-code); font-size: 13px; }
+.btn { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; }
+.bar-right { display: flex; gap: 6px; align-items: center; }
+
+/* Body */
+.main { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 0; }
+.rail { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.rail-head { padding: 10px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.context { font-size: 12px; color: var(--muted); }
+.context b { color: var(--fg); font-weight: 600; }
+.context .small { display: inline-block; margin-top: 4px; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
+.rail-head input { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); font-size: 13px; }
+.files { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; }
+.files li button { display: flex; width: 100%; align-items: baseline; gap: 8px; padding: 5px 12px; border: 0; background: none; text-align: left; cursor: pointer; }
+.files li button:hover { background: var(--bg); }
+.files li button[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.files .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fsub { display: block; font-size: 11px; color: var(--muted); font-family: var(--font-code); overflow: hidden; text-overflow: ellipsis; }
+.badge { font: 600 11px/1 var(--font-code); padding: 3px 5px; border-radius: 4px; white-space: nowrap; }
+.b-added { color: var(--add-fg); background: var(--add-bg); }
+.b-removed { color: var(--del-fg); background: var(--del-bg); }
+.b-changed { color: var(--mod-fg); background: var(--fold-bg); }
+.b-same { color: var(--muted); background: var(--fold-bg); }
+.rail-foot { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+
+.content { overflow: auto; min-width: 0; }
+.content-inner { padding: 14px max(16px, env(safe-area-inset-right, 0px)) 40px 16px; display: grid; gap: 14px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--line); }
+.file-title { flex: 1 1 260px; min-width: 0; }
+.file-title h1 { font-size: 16px; margin: 0; font-weight: 600; text-wrap: balance; }
+.file-title .path { font: 12px var(--font-code); color: var(--muted); word-break: break-all; }
+.file-title .path button { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0 4px; font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: none; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+.summary { font-size: 13px; color: var(--muted); }
+
+.status { padding: 14px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); background: var(--panel); }
+.status.error { border-style: solid; border-color: var(--del-mark); color: var(--del-fg); background: var(--del-bg); }
+
+/* Entry */
+.entry { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.entry > header { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+.entry > header h2 { font: 600 13px var(--font-code); margin: 0; }
+.entry > header .caret { color: var(--muted); width: 1ch; display: inline-block; transition: transform .12s; }
+.entry.collapsed > header .caret { transform: rotate(-90deg); }
+.entry.collapsed > header { border-bottom: 0; }
+.entry.collapsed > .body { display: none; }
+.opts { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.opt { font: 11px var(--font-code); padding: 2px 6px; border-radius: 4px; background: var(--fold-bg); color: var(--muted); }
+.opt.diff { color: var(--mod-fg); }
+.note { padding: 8px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.sides.unified { grid-template-columns: minmax(0, 1fr); }
+.side-head { font: 600 11px var(--font-ui); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 5px 10px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.col { overflow-x: auto; min-width: 0; }
+.sides:not(.unified) .col + .col, .sides:not(.unified) .side-head + .side-head { border-left: 1px solid var(--line); }
+.code { font: 12.5px/var(--lh) var(--font-code); width: max-content; min-width: 100%; }
+.ln { display: flex; height: var(--lh); white-space: pre; }
+.ln .g { position: sticky; left: 0; z-index: 1; flex: none; width: 4.5ch; padding-right: 1ch; text-align: right; color: var(--gutter-fg); background: var(--panel); user-select: none; font-variant-numeric: tabular-nums; }
+.ln .sg { flex: none; width: 2ch; text-align: center; color: var(--gutter-fg); user-select: none; }
+.ln .t { flex: 1; padding-right: 2ch; }
+.code.ruled .ln .t { background-image: linear-gradient(to right, transparent calc(var(--pw) * 1ch), var(--ruler) calc(var(--pw) * 1ch), var(--ruler) calc(var(--pw) * 1ch + 1px), transparent calc(var(--pw) * 1ch + 1px)); }
+.ln.add .t, .ln.add .sg { background-color: var(--add-bg); }
+.ln.add .sg { color: var(--add-fg); }
+.ln.del .t, .ln.del .sg { background-color: var(--del-bg); }
+.ln.del .sg { color: var(--del-fg); }
+.ln.add .g { background: var(--add-bg); }
+.ln.del .g { background: var(--del-bg); }
+.ln.pad .t, .ln.pad .g, .ln.pad .sg { background: repeating-linear-gradient(135deg, transparent 0 4px, var(--fold-bg) 4px 5px); }
+.ln mark { color: inherit; border-radius: 2px; }
+.ln.add mark { background: var(--add-mark); }
+.ln.del mark { background: var(--del-mark); }
+.ln.fold { background: var(--fold-bg); color: var(--muted); cursor: pointer; }
+.ln.fold .g { background: var(--fold-bg); }
+.ln.fold:hover { color: var(--accent); }
+.ws .t .sp::before { content: "·"; position: absolute; color: var(--gutter-fg); }
+.ws .t .sp { position: relative; }
+
+.welcome { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; max-width: 72ch; display: grid; gap: 10px; }
+.welcome h1 { margin: 0; font-size: 18px; }
+.welcome p { margin: 0; color: var(--muted); }
+.welcome ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.welcome code, .kbd { font: 12.5px var(--font-code); background: var(--fold-bg); padding: 1px 5px; border-radius: 4px; }
+.welcome li button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: 12.5px var(--font-code); text-decoration: underline; }
+
+/* Settings dialog */
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); padding: 18px; width: min(460px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+dialog h2 { margin: 0 0 12px; font-size: 16px; }
+dialog label { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+dialog input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-family: var(--font-code); font-size: 13px; }
+dialog .hint { font-size: 12px; color: var(--muted); }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+
+.drop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgb(69 83 184 / .18); border: 3px dashed var(--accent); font-size: 18px; font-weight: 600; color: var(--accent); pointer-events: none; }
+
+@media (max-width: 760px) {
+  .app { height: auto; }
+  .main { grid-template-columns: 1fr; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--line); }
+  .files { max-height: 34vh; }
+  .content { overflow: visible; }
+  .content-inner { padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  .sides:not(.unified) { grid-template-columns: 1fr; }
+  .sides:not(.unified) .col + .col, .sides:not(.unified) .side-head + .side-head { border-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand">Snapshot Diff<small id="repoLabel"></small></div>
+    <form class="query" id="queryForm" autocomplete="off">
+      <input id="q" spellcheck="false" placeholder="PR #1234 · PR/compare/blob URL · main...branch · tests/…/format.test.js.snap · Tuples · @ref" aria-label="What to load">
+      <button class="btn primary" type="submit">Load</button>
+    </form>
+    <div class="bar-right">
+      <button class="btn" id="localBtn" type="button" title="Open one .snap file to view, or two to compare">Open local…</button>
+      <input type="file" id="localInput" accept=".snap" multiple hidden>
+      <button class="btn" id="settingsBtn" type="button">Settings</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="rail">
+      <div class="rail-head">
+        <div class="context" id="context">Not loaded</div>
+        <input id="filter" placeholder="Filter files ( / )" aria-label="Filter files">
+      </div>
+      <ul class="files" id="files"></ul>
+      <div class="rail-foot" id="foot"><span class="kbd">[</span> <span class="kbd">]</span> previous / next file</div>
+    </aside>
+    <main class="content" id="content">
+      <div class="content-inner" id="inner"></div>
+    </main>
+  </div>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <label>Repository
+      <input id="sRepo" spellcheck="false" placeholder="prettier-solidity/prettier-plugin-solidity">
+    </label>
+    <label>Default branch
+      <input id="sRef" spellcheck="false" placeholder="main">
+    </label>
+    <label>GitHub token (optional)
+      <input id="sToken" type="password" spellcheck="false" placeholder="github_pat_…">
+      <span class="hint">Without a token the GitHub API allows 60 requests per hour. File contents come from raw.githubusercontent.com and do not count. The token is kept in this browser's localStorage only. A fine-grained token with no permissions (public repos, read-only) is enough.</span>
+    </label>
+    <div class="row">
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn primary" value="save" id="sSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="drop" id="drop" hidden>Drop one .snap to view, or two to compare</div>
+
+<script>
+"use strict";
+
+/* ---------- settings ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("snapdiff:" + k); return v == null ? d : v; } catch { return d; } },
+  set(k, v) { try { if (v) localStorage.setItem("snapdiff:" + k, v); else localStorage.removeItem("snapdiff:" + k); } catch {} },
+};
+const cfg = {
+  repo: store.get("repo", "prettier-solidity/prettier-plugin-solidity"),
+  ref: store.get("ref", "main"),
+  token: store.get("token", ""),
+};
+const prefs = {
+  view: store.get("view", "split"),
+  onlyChanged: store.get("onlyChanged", "1") === "1",
+  showWs: store.get("ws", "0") === "1",
+  ctx: 3,
+};
+
+/* ---------- state ---------- */
+const S = {
+  mode: null,         // 'browse' | 'pr' | 'compare' | 'local'
+  repo: cfg.repo,
+  title: "",
+  baseRepo: null, baseRef: null,   // for pr/compare/local-two
+  headRepo: null, headRef: null,   // for browse: headRef is the ref
+  files: [],          // [{path, status, prev, stats}]
+  current: null,      // path
+  compare: "out",     // 'out' | 'in' | 'io'
+  pr: null,
+};
+const cache = new Map();
+let rate = null;
+
+/* ---------- utils ---------- */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const encPath = (p) => p.split("/").map(encodeURIComponent).join("/");
+const shortSha = (s) => /^[0-9a-f]{40}$/.test(s) ? s.slice(0, 7) : s;
+
+function labelFor(path) {
+  const m = path.match(/(?:^|\/)([^/]+)\/__snapshots__\/([^/]+)$/);
+  if (!m) return path.split("/").pop();
+  return m[2] === "format.test.js.snap" ? m[1] : m[1] + " · " + m[2].replace(/\.snap$/, "");
+}
+
+/* ---------- GitHub ---------- */
+class GhError extends Error {}
+async function gh(path) {
+  const headers = { Accept: "application/vnd.github+json" };
+  if (cfg.token) headers.Authorization = "Bearer " + cfg.token;
+  let r;
+  try { r = await fetch("https://api.github.com" + path, { headers }); }
+  catch (e) { throw new GhError("Could not reach api.github.com (" + e.message + ")."); }
+  const rem = r.headers.get("x-ratelimit-remaining");
+  if (rem != null) { rate = { rem: +rem, limit: +r.headers.get("x-ratelimit-limit"), reset: +r.headers.get("x-ratelimit-reset") }; renderFoot(); }
+  if (!r.ok) {
+    if ((r.status === 403 || r.status === 429) && rate && rate.rem === 0) {
+      const t = new Date(rate.reset * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      throw new GhError(`GitHub API rate limit reached (${rate.limit}/hour). It resets at ${t}. Add a token in Settings to raise the limit to 5000/hour.`);
+    }
+    let msg = r.statusText;
+    try { msg = (await r.json()).message || msg; } catch {}
+    throw new GhError(`GitHub API ${r.status} for ${path}: ${msg}`);
+  }
+  return r.json();
+}
+async function ghPaged(path, max = 10) {
+  const out = [];
+  for (let page = 1; page <= max; page++) {
+    const sep = path.includes("?") ? "&" : "?";
+    const items = await gh(`${path}${sep}per_page=100&page=${page}`);
+    out.push(...items);
+    if (items.length < 100) break;
+  }
+  return out;
+}
+async function raw(repo, ref, path) {
+  const key = repo + "@" + ref + ":" + path;
+  if (cache.has(key)) return cache.get(key);
+  const p = (async () => {
+    let r;
+    try { r = await fetch(`https://raw.githubusercontent.com/${repo}/${encodeURIComponent(ref).replace(/%2F/g, "/")}/${encPath(path)}`); }
+    catch (e) { throw new GhError("Could not reach raw.githubusercontent.com (" + e.message + ")."); }
+    if (r.status === 404) return null;
+    if (!r.ok) throw new GhError(`raw.githubusercontent.com ${r.status} for ${path}@${shortSha(ref)}`);
+    return r.text();
+  })();
+  cache.set(key, p);
+  p.catch(() => cache.delete(key));
+  return p;
+}
+async function listSnaps(repo, ref) {
+  const key = "tree:" + repo + "@" + ref;
+  if (!cache.has(key)) {
+    const p = gh(`/repos/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`)
+      .then((t) => ({ paths: t.tree.filter((x) => x.type === "blob" && x.path.endsWith(".snap")).map((x) => x.path).sort(), truncated: t.truncated, via: "api" }))
+      .catch((apiErr) => listViaJsdelivr(repo, ref).catch((cdnErr) => {
+        console.warn("jsDelivr listing failed", cdnErr);
+        if (repo !== DEFAULT_REPO) throw apiErr;
+        return { paths: BUILTIN_SNAPS.slice(), truncated: false, via: "builtin" };
+      }));
+    cache.set(key, p);
+    p.catch(() => cache.delete(key));
+  }
+  return cache.get(key);
+}
+
+// Listing through jsDelivr's data API: CORS-enabled and not subject to GitHub's API limit.
+// Branch names can be cached by jsDelivr for some hours, which is fine for a list of paths.
+async function listViaJsdelivr(repo, ref) {
+  const r = await fetch(`https://data.jsdelivr.com/v1/packages/gh/${repo}@${encodeURIComponent(ref)}?structure=flat`);
+  if (!r.ok) throw new Error("jsDelivr " + r.status);
+  const j = await r.json();
+  const paths = (j.files || []).map((f) => String(f.name || "").replace(/^\//, "")).filter((x) => x.endsWith(".snap")).sort();
+  if (!paths.length) throw new Error("jsDelivr returned no snapshot files");
+  return { paths, truncated: false, via: "jsdelivr" };
+}
+// Last resort when both GitHub's API and jsDelivr are unreachable (snapshot paths on main, Nov 2026).
+const DEFAULT_REPO = "prettier-solidity/prettier-plugin-solidity";
+const BUILTIN_SNAPS = ["tests/format/AddressPayable/__snapshots__/format.test.js.snap", "tests/format/AllSolidityFeatures/__snapshots__/format.test.js.snap", "tests/format/AllSolidityFeaturesV0.4.26/__snapshots__/format.test.js.snap", "tests/format/Arrays/__snapshots__/format.test.js.snap", "tests/format/Assembly/__snapshots__/format.test.js.snap", "tests/format/AssemblyV0.4.26/__snapshots__/format.test.js.snap", "tests/format/Assignments/__snapshots__/format.test.js.snap", "tests/format/BasicIterator/__snapshots__/format.test.js.snap", "tests/format/BinaryOperationHierarchy/__snapshots__/format.test.js.snap", "tests/format/BinaryOperators/__snapshots__/format.test.js.snap", "tests/format/BreakingChangesV0.7.4/__snapshots__/format.test.js.snap", "tests/format/BreakingChangesV0.8.0/__snapshots__/format.test.js.snap", "tests/format/Comments/__snapshots__/format.test.js.snap", "tests/format/Conditional/__snapshots__/format.test.js.snap", "tests/format/Constructors/__snapshots__/format.test.js.snap", "tests/format/ConstructorsV0.4.26/__snapshots__/format.test.js.snap", "tests/format/ContractDefinitions/__snapshots__/format.test.js.snap", "tests/format/CustomErrors/__snapshots__/format.test.js.snap", "tests/format/Empty/__snapshots__/format.test.js.snap", "tests/format/EnumDefinitions/__snapshots__/format.test.js.snap", "tests/format/Etc/__snapshots__/format.test.js.snap", "tests/format/ExperimentalTernaries/__snapshots__/format.test.js.snap", "tests/format/ForStatements/__snapshots__/format.test.js.snap", "tests/format/FunctionCalls/__snapshots__/format.test.js.snap", "tests/format/FunctionDefinitions/__snapshots__/format.test.js.snap", "tests/format/FunctionDefinitionsV0.5.0/__snapshots__/format.test.js.snap", "tests/format/HexLiteral/__snapshots__/format.test.js.snap", "tests/format/IfStatements/__snapshots__/format.test.js.snap", "tests/format/Immutable/__snapshots__/format.test.js.snap", "tests/format/ImportDirective/__snapshots__/format.test.js.snap", "tests/format/Inbox/__snapshots__/format.test.js.snap", "tests/format/IndexOf/__snapshots__/format.test.js.snap", "tests/format/IndexRangeAccess/__snapshots__/format.test.js.snap", "tests/format/Issues/__snapshots__/format.test.js.snap", "tests/format/Libraries/__snapshots__/format.test.js.snap", "tests/format/Markdown/__snapshots__/format.test.js.snap", "tests/format/MemberAccess/__snapshots__/format.test.js.snap", "tests/format/ModifierDefinitions/__snapshots__/format.test.js.snap", "tests/format/ModifierInvocations/__snapshots__/format.test.js.snap", "tests/format/ModifierInvocationsV0.4.26/__snapshots__/format.test.js.snap", "tests/format/MultipartStrings/__snapshots__/format.test.js.snap", "tests/format/NameValueExpression/__snapshots__/format.test.js.snap", "tests/format/NumberLiteral/__snapshots__/format.test.js.snap", "tests/format/Ownable/__snapshots__/format.test.js.snap", "tests/format/Parentheses/__snapshots__/format.test.js.snap", "tests/format/Pragma/__snapshots__/format.test.js.snap", "tests/format/PrettierIgnore/__snapshots__/format.test.js.snap", "tests/format/Proxy/__snapshots__/format.test.js.snap", "tests/format/RespectDefaultOptions/__snapshots__/format.test.js.snap", "tests/format/SampleCrowdsale/__snapshots__/format.test.js.snap", "tests/format/SimpleAuction/__snapshots__/format.test.js.snap", "tests/format/SimpleStorage/__snapshots__/format.test.js.snap", "tests/format/SplittableCommodity/__snapshots__/format.test.js.snap", "tests/format/StateVariableDeclarations/__snapshots__/format.test.js.snap", "tests/format/StringLiteral/__snapshots__/format.test.js.snap", "tests/format/StyleGuide/__snapshots__/format.test.js.snap", "tests/format/TryCatch/__snapshots__/format.test.js.snap", "tests/format/Tuples/__snapshots__/format.test.js.snap", "tests/format/TypeDefinition/__snapshots__/format.test.js.snap", "tests/format/WhileStatements/__snapshots__/format.test.js.snap", "tests/format/WrongCompiler/__snapshots__/format.test.js.snap", "tests/format/quotes/__snapshots__/format.test.js.snap", "tests/format/strings/__snapshots__/format.test.js.snap"];
+
+/* ---------- snapshot parsing ---------- */
+function readTemplate(text, pos) { // pos: index right after opening backtick
+  let i = pos;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "\\") { i += 2; continue; }
+    if (c === "`") return { value: text.slice(pos, i).replace(/\\([\s\S])/g, "$1"), end: i };
+    i++;
+  }
+  throw new Error("Unterminated template literal in snapshot");
+}
+const HEAD = /^=+(options|input|output)=+$/;
+const TAIL = /^=+$/;
+function parseSnap(text) {
+  const entries = [];
+  let i = 0;
+  for (;;) {
+    const s = text.indexOf("exports[`", i);
+    if (s < 0) break;
+    const name = readTemplate(text, s + 9);
+    const eq = text.indexOf("`", name.end + 1);
+    if (eq < 0) break;
+    const body = readTemplate(text, eq + 1);
+    entries.push(parseEntry(name.value, body.value));
+    i = body.end + 1;
+  }
+  return entries;
+}
+function parseEntry(name, body) {
+  const lines = body.replace(/^\n/, "").replace(/\n$/, "").split("\n");
+  const sec = {}; let cur = null;
+  for (const l of lines) {
+    const h = l.match(HEAD);
+    if (h) { cur = h[1]; sec[cur] = []; continue; }
+    if (TAIL.test(l) && l.length > 20) { cur = null; continue; }
+    if (cur) sec[cur].push(l);
+  }
+  const trimEnd = (arr) => { arr = arr || []; while (arr.length && arr[arr.length - 1] === "") arr.pop(); return arr; };
+  if (!sec.input && !sec.output) return { name, raw: true, input: [], output: lines, options: [], printWidth: null };
+  const options = trimEnd(sec.options).map((l) => l.replace(/\s*\|\s*$/, "").trim()).filter(Boolean);
+  const pwLine = options.find((o) => /^printWidth:/.test(o));
+  const printWidth = pwLine ? parseInt(pwLine.replace(/^printWidth:\s*/, ""), 10) : 80;
+  return { name, raw: false, options, printWidth, input: trimEnd(sec.input), output: trimEnd(sec.output) };
+}
+
+/* ---------- diff (Myers) ---------- */
+function myers(a, b) {
+  let pre = 0;
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+  let ea = a.length, eb = b.length;
+  while (ea > pre && eb > pre && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+  const A = a.slice(pre, ea), B = b.slice(pre, eb), N = A.length, M = B.length;
+  const ops = [];
+  for (let i = 0; i < pre; i++) ops.push(["=", a[i], b[i]]);
+  const mid = [];
+  if (N === 0) B.forEach((x) => mid.push(["+", null, x]));
+  else if (M === 0) A.forEach((x) => mid.push(["-", x, null]));
+  else {
+    const MAX = N + M, off = MAX + 1, v = new Int32Array(2 * MAX + 3), trace = [];
+    let D = -1;
+    outer: for (let d = 0; d <= MAX; d++) {
+      trace.push(v.slice(off - d - 1, off + d + 2));
+      for (let k = -d; k <= d; k += 2) {
+        let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1])) ? v[off + k + 1] : v[off + k - 1] + 1;
+        let y = x - k;
+        while (x < N && y < M && A[x] === B[y]) { x++; y++; }
+        v[off + k] = x;
+        if (x >= N && y >= M) { D = d; break outer; }
+      }
+    }
+    let x = N, y = M;
+    for (let d = D; d > 0; d--) {
+      const V = trace[d], get = (kk) => V[kk + d + 1], k = x - y;
+      const pk = (k === -d || (k !== d && get(k - 1) < get(k + 1))) ? k + 1 : k - 1;
+      const px = get(pk), py = px - pk;
+      while (x > px && y > py) { mid.push(["=", A[x - 1], B[y - 1]]); x--; y--; }
+      if (x === px) { mid.push(["+", null, B[y - 1]]); y--; }
+      else { mid.push(["-", A[x - 1], null]); x--; }
+    }
+    while (x > 0 && y > 0) { mid.push(["=", A[x - 1], B[y - 1]]); x--; y--; }
+    mid.reverse();
+  }
+  ops.push(...mid);
+  for (let i = ea; i < a.length; i++) ops.push(["=", a[i], b[i - ea + eb]]);
+  return ops;
+}
+function toBlocks(ops) {
+  const blocks = [];
+  let ln = 1, rn = 1, i = 0;
+  while (i < ops.length) {
+    if (ops[i][0] === "=") {
+      const lines = [];
+      while (i < ops.length && ops[i][0] === "=") { lines.push({ ln: ln++, rn: rn++, s: ops[i][1] }); i++; }
+      blocks.push({ t: "eq", lines });
+    } else {
+      const dels = [], adds = [];
+      while (i < ops.length && ops[i][0] !== "=") {
+        if (ops[i][0] === "-") dels.push({ n: ln++, s: ops[i][1] }); else adds.push({ n: rn++, s: ops[i][2] });
+        i++;
+      }
+      blocks.push({ t: "chg", dels, adds });
+    }
+  }
+  return blocks;
+}
+const TOK = /\s+|\w+|[^\w\s]/g;
+function intra(a, b) { // returns [htmlA, htmlB] or null when too different
+  const ta = a.match(TOK) || [], tb = b.match(TOK) || [];
+  if (ta.length * tb.length > 250000) return null;
+  const ops = myers(ta, tb);
+  let changed = 0;
+  for (const o of ops) if (o[0] !== "=") changed += (o[1] || o[2]).length;
+  if (changed > 0.65 * (a.length + b.length)) return null;
+  let ha = "", hb = "";
+  for (const [t, x, y] of ops) {
+    if (t === "=") { ha += wsHtml(x); hb += wsHtml(y); }
+    else if (t === "-") ha += "<mark>" + wsHtml(x) + "</mark>";
+    else hb += "<mark>" + wsHtml(y) + "</mark>";
+  }
+  return [ha, hb];
+}
+function wsHtml(s) {
+  if (!prefs.showWs) return esc(s);
+  return esc(s).replace(/ /g, '<span class="sp"> </span>');
+}
+
+/* ---------- diff rendering ---------- */
+const folds = new Map(); let foldSeq = 0;
+function lineHtml(kind, n, sign, html) {
+  return `<div class="ln ${kind}"><span class="g">${n ?? ""}</span><span class="sg">${sign}</span><span class="t">${html}</span></div>`;
+}
+const padLine = () => `<div class="ln pad"><span class="g"></span><span class="sg"></span><span class="t"> </span></div>`;
+function foldHtml(id, count) {
+  return `<div class="ln fold" data-fold="${id}" role="button" tabindex="0"><span class="g">⋯</span><span class="sg"></span><span class="t">Show ${count} unchanged line${count === 1 ? "" : "s"}</span></div>`;
+}
+function renderDiff(a, b, opts) {
+  const { unified, labels, rulerL, rulerR } = opts;
+  const blocks = toBlocks(myers(a, b));
+  const ctx = prefs.ctx;
+  let L = "", R = "", U = "";
+  blocks.forEach((blk, bi) => {
+    if (blk.t === "eq") {
+      const first = bi === 0, last = bi === blocks.length - 1, lines = blk.lines;
+      const head = first ? 0 : ctx, tail = last ? 0 : ctx;
+      const eqL = (x) => lineHtml("", x.ln, "", wsHtml(x.s));
+      const eqR = (x) => lineHtml("", x.rn, "", wsHtml(x.s));
+      const eqU = (x) => `<div class="ln"><span class="g">${x.rn}</span><span class="sg"></span><span class="t">${wsHtml(x.s)}</span></div>`;
+      if (lines.length > head + tail + 2) {
+        const hidden = lines.slice(head, lines.length - tail);
+        const id = ++foldSeq;
+        folds.set(id, { L: hidden.map(eqL).join(""), R: hidden.map(eqR).join(""), U: hidden.map(eqU).join("") });
+        const pre = lines.slice(0, head), post = lines.slice(lines.length - tail);
+        L += pre.map(eqL).join("") + foldHtml(id, hidden.length) + post.map(eqL).join("");
+        R += pre.map(eqR).join("") + foldHtml(id, hidden.length) + post.map(eqR).join("");
+        U += pre.map(eqU).join("") + foldHtml(id, hidden.length) + post.map(eqU).join("");
+      } else {
+        L += lines.map(eqL).join(""); R += lines.map(eqR).join(""); U += lines.map(eqU).join("");
+      }
+    } else {
+      const { dels, adds } = blk, n = Math.max(dels.length, adds.length);
+      const dh = dels.map((d) => wsHtml(d.s)), ah = adds.map((x) => wsHtml(x.s));
+      for (let j = 0; j < Math.min(dels.length, adds.length); j++) {
+        const r = intra(dels[j].s, adds[j].s);
+        if (r) { dh[j] = r[0]; ah[j] = r[1]; }
+      }
+      for (let j = 0; j < n; j++) {
+        L += j < dels.length ? lineHtml("del", dels[j].n, "−", dh[j]) : padLine();
+        R += j < adds.length ? lineHtml("add", adds[j].n, "+", ah[j]) : padLine();
+      }
+      U += dels.map((d, j) => lineHtml("del", d.n, "−", dh[j])).join("") + adds.map((x, j) => lineHtml("add", x.n, "+", ah[j])).join("");
+    }
+  });
+  const ruled = (pw) => pw ? ` ruled" style="--pw:${pw + 6.5}` : "";
+  const ws = prefs.showWs ? " ws" : "";
+  if (unified) {
+    return `<div class="sides unified"><div class="side-head">${esc(labels[0])} → ${esc(labels[1])}</div><div class="col"><div class="code${ws}${ruled(rulerR)}">${U}</div></div></div>`;
+  }
+  return `<div class="sides"><div class="side-head">${esc(labels[0])}</div><div class="side-head">${esc(labels[1])}</div>` +
+    `<div class="col"><div class="code${ws}${ruled(rulerL)}">${L}</div></div><div class="col"><div class="code${ws}${ruled(rulerR)}">${R}</div></div></div>`;
+}
+function renderPlain(lines, label, pw) {
+  const ws = prefs.showWs ? " ws" : "";
+  const body = lines.map((s, i) => lineHtml("", i + 1, "", wsHtml(s))).join("");
+  return `<div class="sides unified"><div class="side-head">${esc(label)}</div><div class="col"><div class="code${ws}${pw ? ` ruled" style="--pw:${pw + 6.5}` : ""}">${body}</div></div></div>`;
+}
+document.addEventListener("click", (e) => {
+  const f = e.target.closest(".ln.fold");
+  if (f) expandFold(f.dataset.fold, f.closest(".entry"));
+});
+document.addEventListener("keydown", (e) => {
+  const f = e.target.closest && e.target.closest(".ln.fold");
+  if (f && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expandFold(f.dataset.fold, f.closest(".entry")); }
+});
+function expandFold(id, root) {
+  const data = folds.get(+id); if (!data) return;
+  root.querySelectorAll(`.ln.fold[data-fold="${id}"]`).forEach((el) => {
+    const unified = el.closest(".sides").classList.contains("unified");
+    const cols = [...el.closest(".sides").querySelectorAll(".col")];
+    const html = unified ? data.U : (cols.indexOf(el.closest(".col")) === 0 ? data.L : data.R);
+    el.insertAdjacentHTML("beforebegin", html);
+    el.remove();
+  });
+}
+
+/* ---------- entry comparison ---------- */
+const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+function pairEntries(base, head) {
+  const bm = new Map(base.map((e) => [e.name, e]));
+  const hm = new Map(head.map((e) => [e.name, e]));
+  const names = [];
+  for (const e of head) names.push(e.name);
+  for (const e of base) if (!hm.has(e.name)) names.push(e.name);
+  return names.map((name) => {
+    const b = bm.get(name) || null, h = hm.get(name) || null;
+    let status = "same";
+    if (!b) status = "added";
+    else if (!h) status = "removed";
+    else if (!same(b.input, h.input) || !same(b.output, h.output) || !same(b.options, h.options)) status = "changed";
+    return { name, base: b, head: h, status };
+  });
+}
+function statsOf(pairs) {
+  const s = { added: 0, removed: 0, changed: 0, same: 0 };
+  for (const p of pairs) s[p.status]++;
+  return s;
+}
+
+/* ---------- query parsing ---------- */
+function parseQuery(q) {
+  q = q.trim();
+  let m;
+  if (!q) return { kind: "browse", ref: cfg.ref };
+  if ((m = q.match(/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/))) return { kind: "pr", repo: m[1], n: +m[2] };
+  if ((m = q.match(/^(?:pr\s*)?#?(\d+)$/i))) return { kind: "pr", n: +m[1] };
+  if ((m = q.match(/github\.com\/([^/\s]+\/[^/\s]+)\/compare\/([^?#\s]+?)\.\.\.?([^?#\s]+)/))) return { kind: "compare", repo: m[1], base: decodeURIComponent(m[2]), head: decodeURIComponent(m[3]) };
+  if ((m = q.match(/github\.com\/([^/\s]+\/[^/\s]+)\/(?:blob|tree)\/([^/\s]+)\/(\S+\.snap)/))) return { kind: "file", repo: m[1], ref: m[2], path: decodeURIComponent(m[3]) };
+  if ((m = q.match(/raw\.githubusercontent\.com\/([^/\s]+\/[^/\s]+)\/([^/\s]+)\/(\S+\.snap)/))) return { kind: "file", repo: m[1], ref: m[2], path: decodeURIComponent(m[3]) };
+  if ((m = q.match(/^(\S+?)\.\.\.?(\S+)$/)) && !q.endsWith(".snap")) return { kind: "compare", base: m[1], head: m[2] };
+  if ((m = q.match(/^@(\S+)$/))) return { kind: "browse", ref: m[1] };
+  if ((m = q.match(/^(?:(\S+?):)?\.?\/?(\S+\.snap)$/))) return { kind: "file", ref: m[1] || cfg.ref, path: m[2] };
+  return { kind: "browse", ref: cfg.ref, find: q };
+}
+
+/* ---------- hash ---------- */
+function writeHash() {
+  const p = new URLSearchParams();
+  if (S.repo !== cfg.repo) p.set("repo", S.repo);
+  if (S.mode === "pr") { p.set("pr", S.pr.number); if (S.pr.kind === "head") p.set("head", "head"); }
+  else if (S.mode === "compare") p.set("compare", S.compareSpec);
+  else if (S.mode === "browse" && S.headRef !== cfg.ref) p.set("ref", S.headRef);
+  if (S.current && S.mode !== "local") p.set("file", S.current);
+  if (S.mode === "pr" || S.mode === "compare") p.set("view", S.compare);
+  const h = p.toString();
+  if (S.mode === "local") return;
+  if (location.hash.slice(1) !== h) history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
+}
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  return { repo: p.get("repo"), pr: p.get("pr"), headKind: p.get("head"), compare: p.get("compare"), ref: p.get("ref"), file: p.get("file"), view: p.get("view") };
+}
+
+/* ---------- loading ---------- */
+let loadSeq = 0;
+function setStatus(html, error) {
+  $("#inner").innerHTML = `<div class="status${error ? " error" : ""}">${html}</div>`;
+}
+async function run(fn) {
+  const seq = ++loadSeq;
+  try { await fn(() => seq === loadSeq); }
+  catch (e) {
+    if (seq !== loadSeq) return;
+    console.error(e);
+    if (/Could not reach/.test(e.message || "") && /claudeusercontent\.com$/.test(location.hostname)) {
+      setStatus("This hosted copy can't reach GitHub: the page's sandbox blocks requests to api.github.com and raw.githubusercontent.com. Use “Open local…” or drop one .snap (view) or two (base, then head). For PRs, branches and paths, open the downloaded index.html from disk or host it on GitHub Pages.", true);
+      return;
+    }
+    setStatus(esc(e.message || String(e)), true);
+  }
+}
+
+async function loadQuery(q, opts = {}) {
+  const pq = parseQuery(q);
+  const repo = pq.repo || opts.repo || cfg.repo;
+  if (pq.kind === "pr") return loadPR(repo, pq.n, opts);
+  if (pq.kind === "compare") return loadCompare(repo, pq.base, pq.head, opts);
+  if (pq.kind === "file") return loadBrowse(repo, pq.ref, { ...opts, file: pq.path });
+  return loadBrowse(repo, pq.ref, { ...opts, find: pq.find });
+}
+
+function loadBrowse(repo, ref, opts = {}) {
+  return run(async (live) => {
+    Object.assign(S, { mode: "browse", repo, headRepo: repo, headRef: ref, baseRepo: null, baseRef: null, compare: "io", pr: null, files: [], current: null });
+    S.title = `<b>${esc(shortSha(ref))}</b> · all snapshots`;
+    renderContext(); renderFiles();
+    if (opts.file) { S.current = opts.file; S.files = [{ path: opts.file, status: null }]; renderFiles(); showFile(); }
+    else setStatus("Listing snapshot files…");
+    let tree;
+    try { tree = await listSnaps(repo, ref); }
+    catch (e) {
+      if (opts.file) { S.title += ` <span style="color:var(--del-fg)">(file list unavailable: ${esc(e.message)})</span>`; renderContext(); return; }
+      throw e;
+    }
+    if (!live()) return;
+    S.files = tree.paths.map((path) => ({ path, status: null }));
+    if (opts.file && !tree.paths.includes(opts.file)) S.files.unshift({ path: opts.file, status: null });
+    if (tree.truncated) S.title += " (tree truncated)";
+    if (tree.via === "jsdelivr") S.title += `<br><span class="small">File list from jsDelivr (GitHub API unavailable).</span>`;
+    if (tree.via === "builtin") S.title += `<br><span class="small">Built-in file list (GitHub API and jsDelivr unavailable); new snapshot files are missing.</span>`;
+    renderContext();
+    if (opts.find) {
+      const f = opts.find.toLowerCase();
+      const hit = S.files.find((x) => labelFor(x.path).toLowerCase() === f) || S.files.find((x) => x.path.toLowerCase().includes(f));
+      if (hit) { S.current = hit.path; renderFiles(); showFile(); return; }
+      $("#filter").value = opts.find;
+    }
+    renderFiles();
+    if (!opts.file) showWelcome();
+  });
+}
+
+// PR contents come from raw.githubusercontent.com pull refs, so no API call is needed for them:
+// before = the base branch, after = refs/pull/N/merge (the PR merged into that branch).
+// The API is used once, for the exact list of changed files; if that fails, every snapshot is scanned.
+function loadPR(repo, n, opts = {}) {
+  return run(async (live) => {
+    setStatus(`Loading PR #${n}…`);
+    const want = opts.headKind === "head" ? "head" : "merge";
+    let headRef = `refs/pull/${n}/${want}`, note = "";
+    if ((await raw(repo, headRef, "package.json")) == null) {
+      if (want === "head") throw new GhError(`PR #${n} not found in ${repo}.`);
+      headRef = `refs/pull/${n}/head`;
+      if ((await raw(repo, headRef, "package.json")) == null) throw new GhError(`PR #${n} not found in ${repo}.`);
+      note = "No merge ref (the PR may have conflicts), so this compares the PR head with " + cfg.ref + ".";
+    }
+    if (!live()) return;
+    const kind = headRef.endsWith("/merge") ? "merge" : "head";
+    if (kind === "head" && !note) note = "Comparing the PR head with " + cfg.ref + ": changes merged into " + cfg.ref + " after the PR branched can show up reversed.";
+    Object.assign(S, {
+      mode: "pr", repo, pr: { number: n, kind }, compareSpec: null,
+      baseRepo: repo, baseRef: cfg.ref, headRepo: repo, headRef,
+      compare: opts.view || "io",
+    });
+    const prUrl = `https://github.com/${repo}/pull/${n}`;
+    const other = kind === "merge" ? "head" : "merge";
+    const head = () => `<a href="${esc(prUrl)}" target="_blank" rel="noopener"><b>PR #${n}</b></a> · ${esc(cfg.ref)} → ${kind === "merge" ? "merged PR" : "PR head"} <button type="button" class="linkbtn" data-headkind="${other}">use ${other === "merge" ? "merge ref" : "PR head"}</button>`;
+    let files, source;
+    try {
+      files = await ghPaged(`/repos/${repo}/pulls/${n}/files`, 30);
+      source = "Changed files from the GitHub API.";
+    } catch (e) {
+      console.warn("PR file list unavailable, scanning instead", e);
+      if (!live()) return;
+      S.title = head() + `<br>Scanning snapshots…`; renderContext();
+      const scan = await scanChanged(repo, cfg.ref, headRef, live);
+      if (!scan) return;
+      files = scan.files;
+      source = `Scanned ${scan.total} snapshot files (GitHub API unavailable: ${/rate limit/i.test(e.message) ? "rate limit reached" : esc(e.message)}). Snapshot files in brand-new test directories are not detected.`;
+    }
+    if (!live()) return;
+    S.title = head() + `<br><span class="small">${esc(note)}${note ? " " : ""}${source}</span>`;
+    setFromChangedFiles(files, opts.file);
+  });
+}
+
+async function scanChanged(repo, baseRef, headRef, live) {
+  const list = await listSnaps(repo, baseRef);
+  const queue = list.paths.slice(), out = [];
+  let done = 0;
+  const worker = async () => {
+    while (queue.length) {
+      const path = queue.shift();
+      const [b, h] = await Promise.all([raw(repo, baseRef, path), raw(repo, headRef, path)]);
+      done++;
+      if (!live()) return;
+      if (b !== h) out.push({ filename: path, status: b == null ? "added" : h == null ? "removed" : "modified" });
+      setStatus(`Scanning snapshot files without the GitHub API… ${done}/${list.paths.length}`);
+    }
+  };
+  await Promise.all(Array.from({ length: 8 }, worker));
+  if (!live()) return null;
+  return { files: out, total: list.paths.length };
+}
+
+function loadCompare(repo, base, head, opts = {}) {
+  return run(async (live) => {
+    setStatus(`Comparing ${esc(base)}…${esc(head)}…`);
+    const cmp = await gh(`/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`);
+    if (!live()) return;
+    const headSha = cmp.commits && cmp.commits.length ? cmp.commits[cmp.commits.length - 1].sha : head;
+    Object.assign(S, {
+      mode: "compare", repo, pr: null, compareSpec: `${base}...${head}`,
+      baseRepo: repo, baseRef: cmp.merge_base_commit.sha, headRepo: repo, headRef: headSha,
+      compare: opts.view || "io",
+    });
+    S.title = `<a href="${esc(cmp.html_url)}" target="_blank" rel="noopener"><b>${esc(base)}…${esc(head)}</b></a><br>${cmp.ahead_by} commit${cmp.ahead_by === 1 ? "" : "s"} ahead${cmp.files && cmp.files.length >= 300 ? " · file list capped at 300" : ""}`;
+    setFromChangedFiles(cmp.files || [], opts.file);
+  });
+}
+
+function setFromChangedFiles(files, wanted) {
+  S.files = files.filter((f) => f.filename.endsWith(".snap") || (f.previous_filename || "").endsWith(".snap"))
+    .map((f) => ({ path: f.filename, prev: f.previous_filename || f.filename, status: f.status, stats: null }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  S.current = (wanted && S.files.find((f) => f.path === wanted)) ? wanted : (S.files[0] && S.files[0].path) || null;
+  renderContext(); renderFiles();
+  if (!S.files.length) { setStatus("No snapshot files changed here."); writeHash(); return; }
+  showFile();
+  prefetchStats();
+}
+
+async function prefetchStats() {
+  const seq = loadSeq;
+  const queue = S.files.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const f = queue.shift();
+      try {
+        const pairs = await pairsFor(f);
+        if (seq !== loadSeq) return;
+        f.stats = statsOf(pairs);
+        renderFiles();
+      } catch (e) { console.warn(e); }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+}
+
+async function pairsFor(f) {
+  if (f.local) return f.pairs;
+  const [b, h] = await Promise.all([
+    f.status === "added" ? null : raw(S.baseRepo, S.baseRef, f.prev || f.path),
+    f.status === "removed" ? null : raw(S.headRepo, S.headRef, f.path),
+  ]);
+  return pairEntries(b ? parseSnap(b) : [], h ? parseSnap(h) : []);
+}
+
+/* ---------- local files ---------- */
+async function loadLocal(fileList) {
+  const files = [...fileList].slice(0, 2);
+  if (!files.length) return;
+  const texts = await Promise.all(files.map((f) => f.text()));
+  ++loadSeq;
+  if (files.length === 1) {
+    const entries = parseSnap(texts[0]);
+    Object.assign(S, { mode: "local", compare: "io", files: [{ path: files[0].name, local: true, single: entries }], current: files[0].name, pr: null });
+    S.title = `<b>Local file</b> · ${esc(files[0].name)}`;
+  } else {
+    const pairs = pairEntries(parseSnap(texts[0]), parseSnap(texts[1]));
+    const name = `${files[0].name} → ${files[1].name}`;
+    Object.assign(S, { mode: "local", compare: "io", files: [{ path: name, local: true, pairs, stats: statsOf(pairs), status: "modified" }], current: name, pr: null });
+    S.title = `<b>Local comparison</b><br>base: ${esc(files[0].name)}<br>head: ${esc(files[1].name)}`;
+  }
+  history.replaceState(null, "", location.pathname + location.search);
+  renderContext(); renderFiles(); showFile();
+}
+
+/* ---------- rendering: rail ---------- */
+function renderContext() {
+  $("#context").innerHTML = S.title || "Not loaded";
+  $("#repoLabel").textContent = S.repo;
+}
+function renderFoot() {
+  const keys = `<span class="kbd">[</span> <span class="kbd">]</span> prev / next file`;
+  $("#foot").innerHTML = keys + (rate ? ` · API ${rate.rem}/${rate.limit}` : "");
+}
+function fileBadge(f) {
+  if (f.stats) {
+    const s = f.stats, parts = [];
+    if (s.changed) parts.push(`<span class="badge b-changed" title="changed entries">~${s.changed}</span>`);
+    if (s.added) parts.push(`<span class="badge b-added" title="added entries">+${s.added}</span>`);
+    if (s.removed) parts.push(`<span class="badge b-removed" title="removed entries">−${s.removed}</span>`);
+    if (!parts.length) parts.push(`<span class="badge b-same">no entry changes</span>`);
+    return parts.join(" ");
+  }
+  if (f.status === "added") return `<span class="badge b-added">new</span>`;
+  if (f.status === "removed") return `<span class="badge b-removed">deleted</span>`;
+  if (f.status === "renamed") return `<span class="badge b-changed">renamed</span>`;
+  return "";
+}
+function visibleFiles() {
+  const q = $("#filter").value.trim().toLowerCase();
+  return q ? S.files.filter((f) => f.path.toLowerCase().includes(q)) : S.files;
+}
+function renderFiles() {
+  const list = visibleFiles();
+  $("#files").innerHTML = list.map((f) =>
+    `<li><button type="button" data-path="${esc(f.path)}" aria-current="${f.path === S.current}"><span class="fname">${esc(labelFor(f.path))}<span class="fsub">${esc(f.path.replace(/\/__snapshots__\/format\.test\.js\.snap$/, ""))}</span></span>${fileBadge(f)}</button></li>`
+  ).join("") || `<li class="status" style="margin:10px;border:0">No files</li>`;
+}
+$("#files").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-path]");
+  if (!b) return;
+  S.current = b.dataset.path;
+  renderFiles(); showFile();
+});
+$("#filter").addEventListener("input", renderFiles);
+$("#context").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-headkind]");
+  if (b && S.mode === "pr") loadPR(S.repo, S.pr.number, { headKind: b.dataset.headkind, file: S.current, view: S.compare });
+});
+
+/* ---------- rendering: content ---------- */
+function showWelcome() {
+  writeHash();
+  const ex = (q, label) => `<button type="button" data-q="${esc(q)}">${esc(label || q)}</button>`;
+  $("#inner").innerHTML = `<section class="welcome">
+    <h1>Pick a snapshot file, or load a PR</h1>
+    <p>Each snapshot entry is shown as a diff. For a single file, that is input against formatted output. For a PR or a branch comparison, it is the snapshot before against after, with input → output one click away.</p>
+    <ul>
+      <li>A PR: ${ex("#1758")} or its GitHub URL. Contents are read from the PR's merge ref, so no token is needed.</li>
+      <li>Two refs: <code>main...some-branch</code> or a GitHub compare URL</li>
+      <li>A file: ${ex("tests/format/Tuples/__snapshots__/format.test.js.snap")} or a blob URL; prefix a ref with <code>ref:path</code></li>
+      <li>A test name: ${ex("Comments")}</li>
+      <li>Browse another branch or commit: <code>@branch-name</code></li>
+      <li>Local files: “Open local…” or drop one <code>.snap</code> (view) or two (base, then head)</li>
+    </ul>
+    <p>Keys: <span class="kbd">/</span> filter, <span class="kbd">[</span> <span class="kbd">]</span> previous / next file, <span class="kbd">u</span> split / unified.</p>
+  </section>`;
+}
+$("#inner").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-q]");
+  if (b) { $("#q").value = b.dataset.q; loadQuery(b.dataset.q); }
+});
+
+let renderSeq = 0;
+async function showFile() {
+  writeHash();
+  const f = S.files.find((x) => x.path === S.current);
+  if (!f) return showWelcome();
+  const seq = ++renderSeq;
+  folds.clear();
+  $("#inner").innerHTML = toolbarHtml(f) + `<div class="status">Loading ${esc(labelFor(f.path))}…</div>`;
+  bindToolbar();
+  try {
+    let html;
+    if (S.mode === "browse" || (f.local && f.single)) {
+      let entries = f.single;
+      if (!entries) {
+        const text = await raw(S.headRepo, S.headRef, f.path);
+        if (text == null) throw new GhError(`${f.path} not found at ${shortSha(S.headRef)}.`);
+        entries = parseSnap(text);
+      }
+      if (seq !== renderSeq) return;
+      $("#summary").textContent = `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`;
+      html = entries.map((e, i) => entryHtml({ name: e.name, head: e, base: null, status: null }, i)).join("");
+    } else {
+      const pairs = await pairsFor(f);
+      if (seq !== renderSeq) return;
+      f.stats = statsOf(pairs); renderFiles();
+      const s = f.stats;
+      $("#summary").textContent = [s.changed && `${s.changed} changed`, s.added && `${s.added} added`, s.removed && `${s.removed} removed`, `${s.same} unchanged`].filter(Boolean).join(" · ");
+      const shown = prefs.onlyChanged ? pairs.filter((p) => p.status !== "same") : pairs;
+      html = shown.map((p, i) => entryHtml(p, i)).join("") || `<div class="status">No entries changed in this file${prefs.onlyChanged && pairs.length ? ". Untick “Only changed” to see all." : "."}</div>`;
+    }
+    const tb = $("#inner").querySelector(".toolbar");
+    $("#inner").innerHTML = "";
+    $("#inner").append(tb);
+    $("#inner").insertAdjacentHTML("beforeend", html);
+    $("#content").scrollTop = 0;
+  } catch (e) {
+    if (seq !== renderSeq) return;
+    console.error(e);
+    const st = $("#inner").querySelector(".status");
+    if (st) { st.classList.add("error"); st.textContent = e.message || String(e); }
+  }
+}
+
+function toolbarHtml(f) {
+  const ghLink = f.local ? "" : S.mode === "pr" ? `https://github.com/${S.repo}/pull/${S.pr.number}/files` : `https://github.com/${S.headRepo || S.repo}/blob/${S.headRef}/${encPath(f.path)}`;
+  const pairMode = !(S.mode === "browse" || f.single);
+  const cmpSeg = pairMode ? `<div class="seg" role="group" aria-label="What to compare">
+      <button type="button" data-cmp="out" aria-pressed="${S.compare === "out"}" title="Output before → output after">Output: before → after</button>
+      <button type="button" data-cmp="in" aria-pressed="${S.compare === "in"}" title="Input before → input after">Input: before → after</button>
+      <button type="button" data-cmp="io" aria-pressed="${S.compare === "io"}" title="Input → output, after the change">Input → output</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="onlyChanged" ${prefs.onlyChanged ? "checked" : ""}> Only changed</label>` : "";
+  return `<div class="toolbar">
+    <div class="file-title"><h1>${esc(labelFor(f.path))}</h1>
+      <div class="path">${esc(f.path)}${f.local ? "" : `<button type="button" id="copyPath" title="Copy path">copy</button><a href="${esc(ghLink)}" target="_blank" rel="noopener">GitHub ↗</a>`}</div>
+      <div class="summary" id="summary"></div>
+    </div>
+    ${cmpSeg}
+    <div class="seg" role="group" aria-label="Layout">
+      <button type="button" data-view="split" aria-pressed="${prefs.view === "split"}">Split</button>
+      <button type="button" data-view="unified" aria-pressed="${prefs.view === "unified"}">Unified</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="showWs" ${prefs.showWs ? "checked" : ""}> Spaces</label>
+    <button class="btn" type="button" id="toggleAll">Collapse all</button>
+  </div>`;
+}
+function bindToolbar() {
+  const tb = $("#inner .toolbar");
+  tb.addEventListener("click", (e) => {
+    const c = e.target.closest("[data-cmp]");
+    if (c) { S.compare = c.dataset.cmp; showFile(); return; }
+    const v = e.target.closest("[data-view]");
+    if (v) { prefs.view = v.dataset.view; store.set("view", prefs.view); showFile(); return; }
+    if (e.target.id === "toggleAll") {
+      const entries = [...document.querySelectorAll(".entry")];
+      const collapse = entries.some((x) => !x.classList.contains("collapsed"));
+      entries.forEach((x) => x.classList.toggle("collapsed", collapse));
+      e.target.textContent = collapse ? "Expand all" : "Collapse all";
+    }
+    if (e.target.id === "copyPath") {
+      const btn = e.target;
+      navigator.clipboard.writeText(S.current).then(() => { btn.textContent = "copied"; setTimeout(() => (btn.textContent = "copy"), 1200); }, () => {});
+    }
+  });
+  tb.addEventListener("change", (e) => {
+    if (e.target.id === "onlyChanged") { prefs.onlyChanged = e.target.checked; store.set("onlyChanged", prefs.onlyChanged ? "1" : "0"); showFile(); }
+    if (e.target.id === "showWs") { prefs.showWs = e.target.checked; store.set("ws", prefs.showWs ? "1" : "0"); showFile(); }
+  });
+}
+
+function optsHtml(base, head) {
+  const b = base ? base.options : [], h = head ? head.options : [];
+  const all = [...new Set([...h, ...b])];
+  return `<div class="opts">${all.map((o) => {
+    const changed = base && head && (!b.includes(o) || !h.includes(o));
+    const prefix = changed ? (h.includes(o) ? "+ " : "− ") : "";
+    return `<span class="opt${changed ? " diff" : ""}">${esc(prefix + o)}</span>`;
+  }).join("")}</div>`;
+}
+const STATUS_LABEL = { added: "added", removed: "removed", changed: "changed", same: "unchanged" };
+const STATUS_CLASS = { added: "b-added", removed: "b-removed", changed: "b-changed", same: "b-same" };
+function entryHtml(p, i) {
+  const unified = prefs.view === "unified";
+  const { base, head, status } = p;
+  const badge = status ? `<span class="badge ${STATUS_CLASS[status]}">${STATUS_LABEL[status]}</span>` : "";
+  const ref = head || base;
+  let body = "", note = "";
+  if (ref.raw) {
+    body = status && base && head && status !== "same"
+      ? renderDiff(base.output, head.output, { unified, labels: ["before", "after"] })
+      : renderPlain(ref.output, "snapshot");
+  } else if (!status || S.compare === "io") {
+    const e = head || base;
+    if (!head) note = "Entry removed; showing its last version.";
+    if (same(e.input, e.output)) { note = (note ? note + " " : "") + "Output is identical to input."; body = renderPlain(e.output, "input = output", e.printWidth); }
+    else body = renderDiff(e.input, e.output, { unified, labels: ["input", `output · printWidth ${e.printWidth}`], rulerR: e.printWidth });
+  } else {
+    const key = S.compare === "in" ? "input" : "output";
+    const a = base ? base[key] : [], b = head ? head[key] : [];
+    const pw = key === "output" ? ref.printWidth : null;
+    if (status === "added") note = "New entry.";
+    if (status === "removed") note = "Entry removed.";
+    if (base && head && same(a, b)) {
+      note = `${key === "input" ? "Input" : "Output"} unchanged.` + (key === "output" && !same(base.input, head.input) ? " The input changed; switch to “Input: before → after”." : key === "input" && !same(base.output, head.output) ? " The output changed." : "");
+      body = renderPlain(b, key, pw);
+    } else body = renderDiff(a, b, { unified, labels: [`${key} · before`, `${key} · after`], rulerL: pw, rulerR: pw });
+  }
+  return `<article class="entry">
+    <header><span class="caret">▾</span><h2>${esc(p.name)}</h2>${badge}${optsHtml(status ? base : null, head || base)}</header>
+    <div class="body">${note ? `<div class="note">${esc(note)}</div>` : ""}${body}</div>
+  </article>`;
+}
+$("#inner").addEventListener("click", (e) => {
+  const h = e.target.closest(".entry > header");
+  if (h && !e.target.closest("a, button")) h.parentElement.classList.toggle("collapsed");
+});
+
+/* ---------- wiring ---------- */
+$("#queryForm").addEventListener("submit", (e) => { e.preventDefault(); $("#filter").value = ""; loadQuery($("#q").value); });
+
+$("#settingsBtn").addEventListener("click", () => {
+  $("#sRepo").value = cfg.repo; $("#sRef").value = cfg.ref; $("#sToken").value = cfg.token;
+  $("#settings").showModal();
+});
+$("#settings").addEventListener("close", () => {
+  if ($("#settings").returnValue !== "save") return;
+  cfg.repo = $("#sRepo").value.trim() || "prettier-solidity/prettier-plugin-solidity";
+  cfg.ref = $("#sRef").value.trim() || "main";
+  cfg.token = $("#sToken").value.trim();
+  store.set("repo", cfg.repo); store.set("ref", cfg.ref); store.set("token", cfg.token);
+  cache.clear();
+  boot();
+});
+
+$("#localBtn").addEventListener("click", () => $("#localInput").click());
+$("#localInput").addEventListener("change", (e) => { loadLocal(e.target.files); e.target.value = ""; });
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => { if ([...e.dataTransfer.types].includes("Files")) { dragDepth++; $("#drop").hidden = false; } });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("#drop").hidden = true; } });
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => { e.preventDefault(); dragDepth = 0; $("#drop").hidden = true; if (e.dataTransfer.files.length) loadLocal(e.dataTransfer.files); });
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, textarea, select, dialog") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/") { e.preventDefault(); $("#filter").focus(); }
+  else if (e.key === "[" || e.key === "]") {
+    const list = visibleFiles(); if (!list.length) return;
+    let i = list.findIndex((f) => f.path === S.current);
+    i = e.key === "]" ? Math.min(list.length - 1, i + 1) : Math.max(0, i - 1);
+    S.current = list[i].path; renderFiles(); showFile();
+    const cur = document.querySelector('.files [aria-current="true"]'); if (cur) cur.scrollIntoView({ block: "nearest" });
+  } else if (e.key === "u") { prefs.view = prefs.view === "split" ? "unified" : "split"; store.set("view", prefs.view); if (S.current) showFile(); }
+});
+
+function boot() {
+  const h = readHash();
+  const repo = h.repo || cfg.repo;
+  renderFoot();
+  if (h.pr) { $("#q").value = "#" + h.pr; return loadPR(repo, +h.pr, { file: h.file, view: h.view, headKind: h.headKind }); }
+  if (h.compare) { $("#q").value = h.compare; const [a, b] = h.compare.split(/\.\.\.?/); return loadCompare(repo, a, b, { file: h.file, view: h.view }); }
+  return loadBrowse(repo, h.ref || cfg.ref, { file: h.file });
+}
+window.addEventListener("hashchange", boot); // replaceState never fires this, so it only runs on manual edits or back/forward
+boot();
+</script>
+</body>
+</html>
